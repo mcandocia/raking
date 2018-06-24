@@ -1,0 +1,263 @@
+<html>
+
+<body>
+
+<p> When working with survey data, your sampling is oftentimes imperfect. For example, women respond to surveys more frequently than men, so you could easily end up with a 70-30 split of women to men. Similarly, middle-aged people may be harder to reach than older people or younger people online (at least that's been my experience). </p>
+
+<p> When you want to report a statistic, such as "What percentage of people in the US watch the TV Show <i>Game of Thrones</i>?", or "How many Big Macs® does the average American eat a year?", you want to make sure that the way you report your statistic is representative of reality. If you cannot get a sample perfectly proportional to reality (e.g., 50% men, 50% women--for ages about 27% ages 18-29, 40% ages 30-54, 33% ages 55+), then <i> weighting </i> the data is often a good choice. </p>
+
+<h2> Methods of Weighting </h2>
+
+<h3> Basic Proportions </h3>
+
+<p> The simplest method of weighting is taking the cross-tabulation of all of the variables you want to weight by (e.g., age and gender, or possibly just gender), and then assigning weights to each row of your data so that the sum of weights in each cross-tabulated group is propoertional to the true population. For example, in the example above with a 70% response rate for women, you would give a weight of 2.33 (<code>0.7/0.3 * 0.5/0.5</code>) to each man, and 1 to each woman, and then normalize them (multiply by the population divided by sum of weights) to get weights of 1.66 and 0.714 for men and women, respectively. </p>
+
+<h3> Raking </h3>
+
+<p> Oftentimes cross-tabulations are not available for every single variable, but you have individual figures for each of those variables. Or perhaps even a cross-tabulation of a subset of those variables. You can still get a good weight estimate by applying a technique called <i>raking</i>, which iteratively adjusts the weights of each row so that a particular column's proportions match with the weight proportions.</p>
+
+<p> The process looks like this: </p>
+
+<ol id="raking_description">
+
+<li> Set each weight to 1 </li>
+<li> Select your variables to weight by and their true population/percentages </li>
+<li> Repeat steps 4-5 until convergence </li>
+<li> Repeat step 5 for each variable </li>
+<li> Set the weight of the column to its weight times the true proportion of each group divided by the proportion represented by the sum of weights in each group.
+
+A more proper description:
+
+<div id="raking_equation_div"><img src="https://maxcandocia.com/media/articles/raking/raking_equation.png"/></div>
+
+</li>
+
+<li> (optional) Limit the maximum weight to the median of the weights plus 6 times the inter-quartile range (IQR) of the weights. This prevents rare categories from having too much impact in your results </li>
+
+<li> Multiply the final weights by the total sample size divided by the sum of the weights (for normalization)</li>
+</ol>
+
+<h2> What to do with the weights </h2>
+<ul> 
+<li>Use them to create a weighted mean of a variable you want to describe. <code> weighted_mean(x, weights) = sum(x*weights)/sum(weights)</code> </li>
+<li> Add them together as a replacement for counts in other tabulations/cross-tabulations. This can be used, for example, with Fisher's exact test, which detects correlations between categorical variables </li>
+
+<h2> What <b>NOT</b> to do with the weights </h2>
+
+<ul>
+<li> They should not be used as weights in a regression. This will decrease performance of the algorithm. The variables you are "weighting by" should be control variables in the model. Weighting in regression should mainly be used to minimize the impact of outliers </li>
+</ul>
+
+<h2> Possible Pitfalls </h2>
+
+<ul>
+<li> If two groups you are raking by are highly correlated, then convergence will be slower and the weights will not be as useful </li>
+<li> If there are cells that are empty or have low counts, then convergence will be lousy and the weights will not be as useful </li>
+<li> If the actual groups are highly correlated, you should use cross-tabulations. e.g., if you were weighting by age and income, you would be best to use a cross-tabulation of both of those variables, as older people are wealthier than younger people in general.</li>
+</ul>
+<li> If there are a large number of variables or a large number of groups within each/any variable, the performance of raking significantly decreases</li>
+</ul>
+
+<h1 id="code_example"> Code Example </h1>
+
+<p> Below is an implementation of raking in R
+
+<!--begin.rcode silent_setup, echo=FALSE, warning=FALSE, message=FALSE
+
+library(knitr)
+library(kableExtra)
+end.rcode-->
+
+<!--begin.rcode setup, echo=TRUE
+library(plyr)
+library(dplyr)
+library(reshape2)
+library(ggplot2)
+
+# will make sure a list's elements match the levels of
+# the data it corresponds to
+reorder_list <- function(x, reference_data){
+  new_list = list()
+  data_levels = levels(reference_data)
+  for (level in levels(as.factor(reference_data)))
+    new_list[[level]] = x[[level]]
+  return(new_list)
+}
+
+# calcualtes weights for data based on selected variables and their "true" margins
+rake_data <- function(data, variables, true_or_estimated_margins, max_iter=50, truncate_extreme_weights=TRUE){
+  weights = rep(1, nrow(data))
+  
+  # calculate the sum and proportions of each variable + level in advance
+  # and make sure that order matches the same order in the data
+  total_margins = list()
+  for (variable in variables){
+    original_margins = true_or_estimated_margins[[variable]]
+    reordered_margins = reorder_list(original_margins, data[,variable])
+    
+    total_margin =  sum(unlist(reordered_margins[[variable]]))
+    total_margins[[variable]] = total_margin
+    for (level in names(true_or_estimated_margins[[variable]]))
+      reordered_margins[[variable]][[level]] = 
+          reordered_margins[[variable]][[level]]/total_margin
+  }
+  
+  # create design matrices (columns of 1s and 0s in this case) for faster calculations
+  design_matrices = list()
+  for (variable in variables){
+    # create model matrix with 0-intercept, which removes the concept of "reference variable"
+    design_matrices[[variable]] = as.data.frame(model.matrix(~.+0, data=data[,variable,drop=FALSE]))
+    # remove variable name from column name so only level remains
+    colnames(design_matrices[[variable]]) = substr(colnames(design_matrices), 1, nchar(variable)) 
+  }
+  
+  # perform raking
+  for (i in 1:max_iter){
+    for (variable in variables){
+      weighted_margins = colSums(weights * design_matrices[[variable]])
+      level_weight_modifications = unlist(true_or_estimated_margins[[variable]])/weighted_margins
+      
+      # this multiplies each column of the design matrices by the corresponding weight change factor
+      # then each column is multiplied by the weights, and the rows are added up, since each row only
+      # has one non-zero value
+      weights = rowSums(weights * mapply(`*`, design_matrices[[variable]], level_weight_modifications))
+    }
+  }
+  
+  # limits extreme weights to median plus 6 times inter-quartile range
+  # IQR = difference between 75th percentile and 25th percentile of data
+  if (truncate_extreme_weights){
+    weight_threshold = median(weights) + 6*IQR(weights)
+    weights = pmin(weights, weight_threshold)
+  }
+  #normalize to population size
+  weights = weights*length(weights)/(sum(weights))
+  
+  return(weights)
+}
+
+# formula in http://www.analyticalgroup.com/download/WEIGHTED_MEAN.pdf
+weighted.var.se <- function(x, w, na.rm=FALSE)
+{
+  x_weighted_mean = sum(x*w)/sum(w)
+  sum(w*(x-x_weighted_mean)^2)/(sum(w)-1)
+}
+
+# the error for the weighted mean estimate
+weighted.var.sigma <- function(x, w){
+  root_b = sqrt(sum(w)^2/sum(w^2))
+  weighted.var.se(x,w)/root_b
+}
+end.rcode-->
+
+<h2> Simulated Data </h2>
+
+<p>Below, I create a small data set with a gender and race variable as the groups, and a "random score" as the response variable. The goal is to find the average score as if it were truly randomly sampled from the target population.</p>
+
+<p> In this case, there is a 70:30 female:male ratio, and a 50:40:10 ratio of white:black:other races. The <i>true</i> proportions are 50:50 female:male and 70:15:15 white:black:other. These are just made up values for this example, so don't look into them any further than that.</p>
+
+<!--begin.rcode data_setup, echo=TRUE, warning=FALSE, message=FALSE
+
+set.seed(525600)
+size_1 = 200
+example_data = data.frame(
+  gender=c("M","F")[1+rbinom(size_1, 1, 0.7)],
+  race=sample(c('White','Black','Other'), size_1, replace=TRUE, prob=c(0.5,0.4,0.1))
+)
+
+actual_margins=list(gender=list('M'=0.5,'F'=0.5), race=list('White'=0.7, 'Black'=0.15, 'Other'=0.15))
+
+survey_weights = rake_data(example_data, c('gender','race'), actual_margins)
+
+example_data = example_data %>% mutate(random_score = 2+rnorm(size_1)/3 + 
+                                         0.2*(gender=='F') - 
+                                         0.25 * (race=='Other') + 
+                                         0.35 * (race=='Black')
+end.rcode-->
+
+<p> Now we can rake the data by gender and race, and then compare the weighted average score to the unweighted. </p>
+
+<!--begin.rcode calculate_weights, echo=TRUE, warning=FALSE, message=FALSE
+
+
+example_data_summary = rbind(
+  example_data %>% summarize(
+  score_mean = mean(random_score),
+  score_error = sd(random_score),
+  uses_weighting='Unweighted',
+  mean_estimate_sigma=sd(random_score)/sqrt(length(random_score))
+  ),
+  example_data %>% summarize(
+    score_mean=sum(survey_weights*random_score)/sum(survey_weights),
+    score_error=sqrt(weighted.var.se(random_score, survey_weights)),
+    uses_weighting='Weighted',
+    mean_estimate_sigma=weighted.var.sigma(random_score, survey_weights)
+  )
+) %>%
+  mutate(uses_weighting=factor(uses_weighting))
+
+end.rcode-->
+
+<!-begin.rcode printed_summary, echo=FALSE, warning=FALSE, results=asis
+print(
+kable(example_data_summary, format='html') %>%
+  kable_styling(bootstrap_options = "striped", full_width = F)
+
+)
+
+end.rcode-->
+
+<p> We can compare the different estimates visually, plotting the means along with the standard error estimates for the data, followed by the standard error estimates for the mean estimates themselves.<p>
+
+<h3> Standard Error </h3>
+
+<p> The standard error here is the weighted mean estimate standard error (very small) plus the standard error of the weighted data (much larger). The interpretation of the red ribbons is that you could expect 95% of the population to fall within them when sampled randomly. The weighted sample is more accurate when applied to the general population. </p>
+
+<!--begin.rcode se_estimate_plot echo=FALSE, warning=FALSE, message=FALSE, fig.width=6, fig.height=4
+
+
+ggplot(example_data_summary) + geom_bar(aes(x=uses_weighting, y=score_mean), stat='identity') +
+  geom_rect(aes(xmin=as.numeric(uses_weighting)-0.45, 
+                xmax=as.numeric(uses_weighting)+0.45,
+                ymin=score_mean-1.96*(mean_estimate_sigma+score_error), 
+                ymax=score_mean+1.96*(mean_estimate_sigma+score_error)),
+            fill='#EE555599', color='#00000000') +
+  # plot data alongside bars
+  geom_point(data=example_data, aes(x='Unweighted', y=random_score), alpha=0.4) + 
+  geom_point(data=example_data, aes(x='Weighted', y=random_score), alpha=0.4) + 
+  xlab('') + ylab('Random Score') + ggtitle('Mean estimates of example data',
+                                            subtitle='Sample size=200, red bands indicate 95% prediction intervals')
+
+end.rcode-->
+
+<h3> Mean Estimate Error </h3>
+
+<p> We can also look at how precise the mean estimate is itself. That is, "What is the true mean?" The weighted mean is slightly higher, and also much more precise than the unweighted version. This is likely due to more of the "average" values having more representation with the weights than in the unweighted sample. </p>
+
+<p> Note that the trend of the weighted standard error/estimate standard error being smaller is not always true. If the more extreme values had higher weights, then the opposite effect would be seen. </p>
+
+<!--begin.rcode mean_estimate_se_estimate_plot echo=FALSE, warning=FALSE, message=FALSE, fig.width=6, fig.height=4
+
+ggplot(example_data_summary) + geom_bar(aes(x=uses_weighting, y=score_mean), stat='identity') +
+  geom_rect(aes(xmin=as.numeric(uses_weighting)-0.45, 
+                xmax=as.numeric(uses_weighting)+0.45,
+                ymin=score_mean-1.96*mean_estimate_sigma, 
+                ymax=score_mean+1.96*mean_estimate_sigma),
+            fill='#EE555599', color='#00000000') +
+  # plot data alongside bars
+  geom_point(data=example_data, aes(x='Unweighted', y=random_score), alpha=0.4) + 
+  geom_point(data=example_data, aes(x='Weighted', y=random_score), alpha=0.4) + 
+  xlab('') + ylab('Random Score') + ggtitle('Mean estimates of example data',
+                                            subtitle='Sample size=200, red bands indicate 95% confidence intervals of weighted mean')
+
+end.rcode-->
+
+<h1> Sources </h2>
+
+<ul>
+<li> General guidelines for raking: <a href="http://www.surveypractice.org/article/2953-practical-considerations-in-raking-survey-data" id="raking_practical_considerations_out" target="_blank">http://www.surveypractice.org/article/2953-practical-considerations-in-raking-survey-data</a></li>
+<li> Weighted mean error and variance formulae: <a href="http://www.analyticalgroup.com/download/WEIGHTED_MEAN.pdf" id="weighted_mean_pdf_out" target="_blank">http://www.analyticalgroup.com/download/WEIGHTED_MEAN.pdf</a>
+
+</body>
+
+</html>

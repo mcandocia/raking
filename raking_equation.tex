@@ -1,0 +1,12 @@
+\documentclass{report}
+
+\usepackage{geometry}
+\usepackage{amsmath}
+
+\begin{document}
+
+For weight $w$ of row $i$ at iteration $t+1$ belonging to $group_i$, where $group$ is the column being used for weighting at this step, 
+
+$$w_{i(t+1)}=w_{it} * \cfrac{P(group_i|reality)}{\cfrac{\sum_{group_i}{w_{it}}}{\sum{w_{it}}}}$$
+
+\end{document}
