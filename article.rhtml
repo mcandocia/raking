@@ -41,6 +41,7 @@ A more proper description:
 <ul> 
 <li>Use them to create a weighted mean of a variable you want to describe. <code> weighted_mean(x, weights) = sum(x*weights)/sum(weights)</code> </li>
 <li> Add them together as a replacement for counts in other tabulations/cross-tabulations. This can be used, for example, with Fisher's exact test, which detects correlations between categorical variables </li>
+</ul>
 
 <h2> What <b>NOT</b> to do with the weights </h2>
 
@@ -54,7 +55,6 @@ A more proper description:
 <li> If two groups you are raking by are highly correlated, then convergence will be slower and the weights will not be as useful </li>
 <li> If there are cells that are empty or have low counts, then convergence will be lousy and the weights will not be as useful </li>
 <li> If the actual groups are highly correlated, you should use cross-tabulations. e.g., if you were weighting by age and income, you would be best to use a cross-tabulation of both of those variables, as older people are wealthier than younger people in general.</li>
-</ul>
 <li> If there are a large number of variables or a large number of groups within each/any variable, the performance of raking significantly decreases</li>
 </ul>
 
@@ -173,6 +173,7 @@ example_data = example_data %>% mutate(random_score = 2+rnorm(size_1)/3 +
                                          0.2*(gender=='F') - 
                                          0.25 * (race=='Other') + 
                                          0.35 * (race=='Black')
+)
 end.rcode-->
 
 <p> Now we can rake the data by gender and race, and then compare the weighted average score to the unweighted. </p>
@@ -198,12 +199,10 @@ example_data_summary = rbind(
 
 end.rcode-->
 
-<!-begin.rcode printed_summary, echo=FALSE, warning=FALSE, results=asis
-print(
+<!--begin.rcode printed_summary, echo=FALSE, warning=FALSE, results='asis'
+
 kable(example_data_summary, format='html') %>%
   kable_styling(bootstrap_options = "striped", full_width = F)
-
-)
 
 end.rcode-->
 
@@ -213,7 +212,7 @@ end.rcode-->
 
 <p> The standard error here is the weighted mean estimate standard error (very small) plus the standard error of the weighted data (much larger). The interpretation of the red ribbons is that you could expect 95% of the population to fall within them when sampled randomly. The weighted sample is more accurate when applied to the general population. </p>
 
-<!--begin.rcode se_estimate_plot echo=FALSE, warning=FALSE, message=FALSE, fig.width=6, fig.height=4
+<!--begin.rcode se_estimate_plot, echo=FALSE, warning=FALSE, message=FALSE, fig.width=8, fig.height=6
 
 
 ggplot(example_data_summary) + geom_bar(aes(x=uses_weighting, y=score_mean), stat='identity') +
@@ -236,7 +235,7 @@ end.rcode-->
 
 <p> Note that the trend of the weighted standard error/estimate standard error being smaller is not always true. If the more extreme values had higher weights, then the opposite effect would be seen. </p>
 
-<!--begin.rcode mean_estimate_se_estimate_plot echo=FALSE, warning=FALSE, message=FALSE, fig.width=6, fig.height=4
+<!--begin.rcode mean_estimate_se_estimate_plot, echo=FALSE, warning=FALSE, message=FALSE, fig.width=8, fig.height=6
 
 ggplot(example_data_summary) + geom_bar(aes(x=uses_weighting, y=score_mean), stat='identity') +
   geom_rect(aes(xmin=as.numeric(uses_weighting)-0.45, 
@@ -257,6 +256,11 @@ end.rcode-->
 <ul>
 <li> General guidelines for raking: <a href="http://www.surveypractice.org/article/2953-practical-considerations-in-raking-survey-data" id="raking_practical_considerations_out" target="_blank">http://www.surveypractice.org/article/2953-practical-considerations-in-raking-survey-data</a></li>
 <li> Weighted mean error and variance formulae: <a href="http://www.analyticalgroup.com/download/WEIGHTED_MEAN.pdf" id="weighted_mean_pdf_out" target="_blank">http://www.analyticalgroup.com/download/WEIGHTED_MEAN.pdf</a>
+</ul>
+
+<h1> GitHub Repository Code </h1>
+
+<p> Here is the GitHub repository for this code: <a href="https://github.com/mcandocia/raking" target="_blank" id="git_raking_out">https://github.com/mcandocia/raking</a> </p>
 
 </body>
 
